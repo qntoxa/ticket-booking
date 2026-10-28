@@ -1,0 +1,112 @@
+openapi: 3.0.3
+info:
+  title: Ticket Booking System API
+  version: 1.0.0
+  description: >
+    Высоконагруженный сервис бронирования билетов и мест с защитой от овербукинга,
+    временным удержанием резерва (Hold TTL 10 минут), ролевой авторизацией JWT (RBAC)
+    и идемпотентным проведением оплаты.
+servers:
+  - url: http://localhost:8081
+paths:
+  /api/v1/auth/register:
+    post:
+      summary: Регистрация пользователя
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email: { type: string, example: "alex@example.com" }
+                password: { type: string, example: "Secret123!" }
+                role: { type: string, enum: [USER, ADMIN], default: USER }
+      responses:
+        '201':
+          description: Успешная регистрация и выдача пары Access/Refresh JWT
+  /api/v1/auth/login:
+    post:
+      summary: Вход и получение пары JWT токенов
+      responses:
+        '200':
+          description: Access и Refresh токены
+  /api/v1/auth/refresh:
+    post:
+      summary: Обновление пары токенов по Refresh токену
+      responses:
+        '200':
+          description: Новая пара токенов
+  /api/v1/events:
+    get:
+      summary: Список доступных мероприятий
+      responses:
+        '200':
+          description: Массив мероприятий со статистикой свободных мест
+    post:
+      summary: Создание нового мероприятия и генерация мест (только ADMIN)
+      security:
+        - bearerAuth: []
+      responses:
+        '201':
+          description: Мероприятие создано
+  /api/v1/events/{id}/seats:
+    get:
+      summary: Схема мест мероприятия и их текущие статусы (AVAILABLE, HELD, SOLD)
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Список мест
+  /api/v1/bookings/hold:
+    post:
+      summary: Временное резервирование места (Hold на 10 минут) с защитой от овербукинга
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [event_id, seat_number]
+              properties:
+                event_id: { type: string, example: "evt-1" }
+                seat_number: { type: string, example: "A-1" }
+      responses:
+        '201':
+          description: Место успешно удержано на 10 минут
+        '409':
+          description: Конфликт — место уже занято или удерживается другим пользователем
+  /api/v1/bookings/confirm:
+    post:
+      summary: Идемпотентная оплата и подтверждение бронирования
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: header
+          name: Idempotency-Key
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [hold_id]
+              properties:
+                hold_id: { type: string, example: "hold-1" }
+      responses:
+        '200':
+          description: Заказ подтверждён, билет выпущен
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
